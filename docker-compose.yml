@@ -1,0 +1,60 @@
+x-env: &env
+  DATABASE_URL: postgresql://jobforge:jobforge@db:5432/jobforge
+  LEASE_SECONDS: "10"
+  HEARTBEAT_SECONDS: "3"
+  SCHEDULER_INTERVAL: "0.25"
+  WORKER_CONCURRENCY: "4"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: jobforge
+      POSTGRES_PASSWORD: jobforge
+      POSTGRES_DB: jobforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobforge -d jobforge"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8000
+    environment: *env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Stateless and safe to run more than once: a Postgres advisory lock
+  # makes only one instance act per tick, the others are hot standbys.
+  scheduler:
+    build: .
+    command: python -m app.scheduler
+    environment: *env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  worker:
+    build: .
+    command: python -m app.worker
+    environment: *env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+volumes:
+  pgdata:

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobForge</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2230; --line: #2a3140;
+    --text: #d7dce5; --dim: #8791a3; --accent: #58a6ff;
+    --ok: #3fb950; --run: #58a6ff; --warn: #d29922; --bad: #f85149; --mute: #6e7681;
+    --mono: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--mono); }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 18px;
+           background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .5px; }
+  header h1 span { color: var(--accent); }
+  .spacer { flex: 1; }
+  button, select { font: inherit; background: var(--panel2); color: var(--text);
+           border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 14px; padding: 14px 18px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .panel h2 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); font-weight: 600; }
+  .stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .card { background: var(--panel2); border-radius: 6px; padding: 8px 10px; }
+  .card b { display: block; font-size: 22px; }
+  .card small { color: var(--dim); font-size: 11px; }
+  .bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--panel2); margin: 6px 0 4px; }
+  .bar i { display: block; height: 100%; transition: width .4s; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--dim); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .s-success { --c: var(--ok); } .s-running { --c: var(--run); } .s-ready { --c: var(--warn); }
+  .s-pending { --c: var(--mute); } .s-failed, .s-upstream_failed { --c: var(--bad); }
+  .dot, .bar i { background: var(--c); }
+  .worker { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 12px; }
+  .worker:last-child { border: 0; }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; animation: p 1.4s infinite; }
+  @keyframes p { 50% { opacity: .25; } }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 8px; border-bottom: 1px solid #1f2633; }
+  tbody tr { cursor: pointer; } tbody tr:hover { background: var(--panel2); }
+  tbody tr.sel { background: #1b2740; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+           border: 1px solid var(--c); color: var(--c); }
+  .mini { display: flex; height: 6px; width: 90px; border-radius: 3px; overflow: hidden; background: var(--panel2); }
+  .mini i { background: var(--ok); } .mini u { background: var(--run); } .mini s { background: var(--bad); }
+  .dim { color: var(--dim); }
+  svg text { font: 11px var(--mono); fill: var(--text); }
+  .node rect { fill: var(--panel2); stroke: var(--c); stroke-width: 1.5; rx: 6; }
+  .node.s-running rect { animation: glow 1.2s infinite; }
+  @keyframes glow { 50% { stroke-width: 3; } }
+  .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .tag { fill: var(--dim) !important; font-size: 10px !important; }
+  .err { color: var(--bad); font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .empty { color: var(--dim); padding: 14px 0; text-align: center; }
+  #toast { position: fixed; bottom: 16px; right: 16px; background: var(--panel2); border: 1px solid var(--line);
+           padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>▸</span> JobForge <span class="dim">/ distributed job scheduler</span></h1>
+  <div class="spacer"></div>
+  <select id="wf"></select>
+  <button class="primary" id="trigger">Run workflow</button>
+  <button id="burst">Run ×10</button>
+  <button id="seed">Load demo workflows</button>
+</header>
+
+<main>
+  <div class="stack">
+    <div class="panel">
+      <h2>Task states</h2>
+      <div class="bar" id="bar"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel">
+      <h2>Reliability</h2>
+      <div class="cards">
+        <div class="card"><b id="reaped">0</b><small>leases reaped (crash recovery)</small></div>
+        <div class="card"><b id="retries">0</b><small>retries (backoff)</small></div>
+        <div class="card"><b id="dups">0</b><small>duplicate executions absorbed</small></div>
+        <div class="card"><b id="effects">0</b><small>unique effects applied</small></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Workers <span id="wcount" class="dim"></span></h2>
+      <div id="workers"></div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <h2>Runs</h2>
+      <table>
+        <thead><tr><th>run</th><th>workflow</th><th>status</th><th>progress</th><th>started</th></tr></thead>
+        <tbody id="runs"></tbody>
+      </table>
+      <div class="empty" id="no-runs" hidden>No runs yet. Load the demo workflows, then press “Run workflow”.</div>
+    </div>
+    <div class="panel">
+      <h2>DAG <span id="dag-title" class="dim"></span></h2>
+      <div id="dag"><div class="empty">Select a run to see its tasks.</div></div>
+      <div id="task-table"></div>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+const STATES = ["success", "running", "ready", "pending", "failed", "upstream_failed"];
+let selected = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ago = t => { if (!t) return "–"; const s = (Date.now() - new Date(t)) / 1000;
+  return s < 60 ? `${s | 0}s ago` : s < 3600 ? `${(s / 60) | 0}m ago` : `${(s / 3600) | 0}h ago`; };
+const toast = m => { const t = $("toast"); t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); };
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+
+async function refreshWorkflows() {
+  const list = await api("/workflows");
+  const sel = $("wf"), cur = sel.value;
+  sel.innerHTML = list.map(w => `<option>${esc(w.name)}</option>`).join("") || "<option value=''>(no workflows)</option>";
+  if (cur) sel.value = cur;
+}
+
+async function trigger(n) {
+  const name = $("wf").value;
+  if (!name) return toast("Load the demo workflows first");
+  try {
+    for (let i = 0; i < n; i++) await api(`/workflows/${encodeURIComponent(name)}/runs`, { method: "POST" });
+    toast(`Started ${n} run(s) of ${name}`);
+    tick();
+  } catch (e) { toast(e.message); }
+}
+$("trigger").onclick = () => trigger(1);
+$("burst").onclick = () => trigger(10);
+$("seed").onclick = async () => { await api("/demo/seed", { method: "POST" }); await refreshWorkflows(); toast("Demo workflows loaded"); };
+
+function renderStats(s) {
+  const total = STATES.reduce((a, k) => a + (s.tasks[k] || 0), 0) || 1;
+  $("bar").innerHTML = STATES.map(k => `<i class="s-${k}" style="width:${(s.tasks[k] || 0) / total * 100}%"></i>`).join("");
+  $("legend").innerHTML = STATES.map(k => `<span><span class="dot s-${k}"></span>${k.replace("_", " ")} ${s.tasks[k] || 0}</span>`).join("");
+  $("reaped").textContent = s.reaped_leases;
+  $("retries").textContent = s.retries;
+  $("dups").textContent = s.effects.duplicate_executions_absorbed;
+  $("effects").textContent = s.effects.unique;
+  $("wcount").textContent = `(${s.workers.length})`;
+  $("workers").innerHTML = s.workers.length
+    ? s.workers.map(w => `<div class="worker"><span><span class="pulse"></span>${esc(w.id)}</span><span class="dim">${w.inflight} running</span></div>`).join("")
+    : `<div class="empty">No live workers. Start one with <code>python -m app.worker</code>.</div>`;
+}
+
+function renderRuns(runs) {
+  $("no-runs").hidden = runs.length > 0;
+  $("runs").innerHTML = runs.map(r => {
+    const t = +r.total, ok = +r.success / t * 100, run = +r.running / t * 100, bad = +r.failed / t * 100;
+    return `<tr data-id="${r.id}" class="${r.id === selected ? "sel" : ""}">
+      <td>${r.id.slice(0, 8)}</td><td>${esc(r.workflow_name)}</td>
+      <td><span class="badge s-${r.status === "running" ? "running" : r.status}">${r.status}</span></td>
+      <td><div class="mini"><i style="width:${ok}%"></i><u style="width:${run}%"></u><s style="width:${bad}%"></s></div></td>
+      <td class="dim">${ago(r.created_at)}</td></tr>`;
+  }).join("");
+  document.querySelectorAll("#runs tr").forEach(tr => tr.onclick = () => { selected = tr.dataset.id; tick(); });
+}
+
+function layout(tasks) {
+  const by = Object.fromEntries(tasks.map(t => [t.task_key, t]));
+  const depth = {};
+  const d = k => depth[k] ??= by[k].depends_on.length ? 1 + Math.max(...by[k].depends_on.map(d)) : 0;
+  tasks.forEach(t => d(t.task_key));
+  const cols = {};
+  tasks.forEach(t => (cols[depth[t.task_key]] ??= []).push(t.task_key));
+  const pos = {};
+  const W = 150, H = 46, GX = 50, GY = 16;
+  Object.entries(cols).forEach(([c, keys]) => keys.sort().forEach((k, i) => pos[k] = { x: 10 + c * (W + GX), y: 10 + i * (H + GY) }));
+  const width = 20 + (Math.max(...Object.keys(cols)) + 1) * (W + GX);
+  const height = 20 + Math.max(...Object.values(cols).map(c => c.length)) * (H + GY);
+  return { pos, W, H, width, height };
+}
+
+function renderRun(run) {
+  $("dag-title").textContent = `${run.workflow_name} · ${run.id.slice(0, 8)} · ${run.status}`;
+  const { pos, W, H, width, height } = layout(run.tasks);
+  const edges = run.tasks.flatMap(t => t.depends_on.map(dep => {
+    const a = pos[dep], b = pos[t.task_key];
+    const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, mx = (x1 + x2) / 2;
+    return `<path class="edge" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`;
+  })).join("");
+  const nodes = run.tasks.map(t => {
+    const p = pos[t.task_key];
+    const extra = t.reaped_count ? ` · reaped ×${t.reaped_count}` : "";
+    return `<g class="node s-${t.state}" transform="translate(${p.x},${p.y})">
+      <rect width="${W}" height="${H}"/>
+      <text x="10" y="19">${esc(t.task_key.slice(0, 18))}</text>
+      <text x="10" y="35" class="tag">${t.state.replace("_", " ")} · try ${t.attempt}/${t.max_attempts}${extra}</text></g>`;
+  }).join("");
+  $("dag").innerHTML = `<svg width="100%" viewBox="0 0 ${width} ${height}" style="max-width:${width}px">${edges}${nodes}</svg>`;
+  const errs = run.tasks.filter(t => t.error);
+  $("task-table").innerHTML = errs.length
+    ? "<table><tbody>" + errs.map(t => `<tr><td>${esc(t.task_key)}</td><td class="err">${esc(t.error)}</td></tr>`).join("") + "</tbody></table>" : "";
+}
+
+async function tick() {
+  try {
+    const [stats, runs] = await Promise.all([api("/stats"), api("/runs")]);
+    renderStats(stats);
+    renderRuns(runs);
+    if (!selected && runs.length) selected = runs[0].id;
+    if (selected) renderRun(await api(`/runs/${selected}`));
+  } catch (e) { /* server briefly unavailable: next tick retries */ }
+}
+
+refreshWorkflows();
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
